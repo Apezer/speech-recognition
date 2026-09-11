@@ -6,7 +6,7 @@ const { DoubaoService, FORMAT_BY_EXTENSION } = require('./doubao-service.cjs');
 const { CredentialStore } = require('./credential-store.cjs');
 
 app.setName('Vico Speech Recognition');
-app.setPath('userData', path.join(app.getPath('appData'), 'vico-speech-recognition'));
+app.setPath('userData', process.env.VICO_SPEECH_USER_DATA || path.join(app.getPath('appData'), 'vico-speech-recognition'));
 let window;
 let service;
 let credentials;
@@ -44,12 +44,7 @@ async function transcribePath(audioPath, options) {
 }
 
 app.whenReady().then(() => {
-  const testFetch = process.env.VICO_TEST_FAKE_DOUBAO === '1' ? async url => {
-    const headers = { 'X-Api-Status-Code': '20000000', 'X-Api-Message': 'OK', 'X-Tt-Logid': 'test-log-id' };
-    const body = url.endsWith('/query') ? JSON.stringify({ audio_info: { duration: 7100 }, result: { text: 'Hello, this is a cloud speech recognition test.', utterances: [{ start_time: 0, end_time: 7100, text: 'Hello, this is a cloud speech recognition test.' }] } }) : '{}';
-    return new Response(body, { status: 200, headers });
-  } : undefined;
-  service = new DoubaoService({ fetchImpl: testFetch, pollInterval: testFetch ? 10 : 1000 });
+  service = new DoubaoService();
   service.onProgress = value => { if (window && !window.isDestroyed()) window.webContents.send('speech:progress', value); };
   credentials = new CredentialStore(path.join(app.getPath('userData'), 'doubao-api-key.bin'), safeStorage);
   session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => callback(contents === window?.webContents && trusted(contents.getURL()) && permission === 'media' && details.mediaTypes?.every(type => type === 'audio')));

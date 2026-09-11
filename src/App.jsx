@@ -49,30 +49,26 @@ export default function App() {
     navigator.mediaDevices?.addEventListener('devicechange', refreshDevices);
     const off = window.speech?.onProgress(event => {
       if (event.event === 'status') setStatus(event.message);
-      if (event.event === 'segment') { setSegments(current => [...current, event.segment]); setText(current => current ? `${current}\n${event.segment.text}` : event.segment.text); }
     });
     return () => { off?.(); navigator.mediaDevices?.removeEventListener('devicechange', refreshDevices); };
   }, []);
 
-  async function run(operation, transcribing = false) {
+  async function transcribe(operation) {
     const previous = { text, segments, result };
     setBusy(true); setError(''); setNotice('');
-    if (transcribing) { setText(''); setSegments([]); setResult(null); }
-    setStatus(transcribing ? '正在准备音频…' : '正在准备模型…');
+    setText(''); setSegments([]); setResult(null); setStatus('正在准备音频…');
     try {
       const value = await unwrap(operation());
       if (value === null) { setText(previous.text); setSegments(previous.segments); setResult(previous.result); setStatus('已取消选择'); return; }
-      if (transcribing) {
-        setResult(value); setText(value.text); setSegments(value.segments);
-        setStatus(value.text ? '识别完成' : '未检测到有效语音，请检查音频或麦克风');
-      }
+      setResult(value); setText(value.text); setSegments(value.segments);
+      setStatus(value.text ? '识别完成' : '未检测到有效语音，请检查音频或麦克风');
     } catch (error) { setError(error.message); setStatus('任务已停止'); }
     finally { setBusy(false); }
   }
   async function start() {
     setStarting(true); setError('');
     try {
-      await recorder.start(deviceId, bytes => run(() => window.speech.transcribeRecording(bytes, settings), true), error => { setBusy(false); setError(error.message); setStatus('录音失败'); });
+      await recorder.start(deviceId, bytes => transcribe(() => window.speech.transcribeRecording(bytes, settings)), error => { setBusy(false); setError(error.message); setStatus('录音失败'); });
       setStatus('正在录音，结束后开始识别'); refreshDevices();
     } catch (error) { setError(`无法录音：${error.message}。请检查 Windows 麦克风隐私权限和输入设备。`); }
     finally { setStarting(false); }
@@ -123,7 +119,7 @@ export default function App() {
             </div>
             <button className={`primary ${recorder.recording ? 'stop' : ''}`} disabled={!cloud?.configured || busy || starting} onClick={recorder.recording ? recorder.stop : start}>{recorder.recording ? <Square size={16}/> : <Mic size={16}/>} {recorder.recording ? '结束录音并识别' : starting ? '正在打开麦克风…' : '开始录音'}</button>
             <div className="separator"><span/>或者<span/></div>
-            <button className="import" disabled={locked || !cloud?.configured} onClick={() => run(() => window.speech.transcribeFile(settings), true)}><Upload size={18}/><b>导入音频文件</b><small>WAV / MP3 / M4A / FLAC / OGG 等</small></button>
+            <button className="import" disabled={locked || !cloud?.configured} onClick={() => transcribe(() => window.speech.transcribeFile(settings))}><Upload size={18}/><b>导入音频文件</b><small>WAV / MP3 / M4A / FLAC / OGG 等</small></button>
           </section>
           <section className="result-panel panel">
             <div className="panel-title"><h2><AudioLines size={18}/>识别结果</h2><span>02</span></div>

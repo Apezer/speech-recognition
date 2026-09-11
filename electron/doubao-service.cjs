@@ -56,6 +56,7 @@ function normalizeResult(body, elapsed) {
 
 class DoubaoService {
   constructor({ fetchImpl = globalThis.fetch, pollInterval = 1000, timeout = 10 * 60 * 1000 } = {}) {
+    if (typeof fetchImpl !== 'function') throw new Error('当前运行环境不支持网络请求');
     this.fetch = fetchImpl;
     this.pollInterval = pollInterval;
     this.timeout = timeout;

@@ -3,8 +3,13 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const errors = [];
+process.env.VICO_SPEECH_USER_DATA = path.join(__dirname, '../output/test-user-data');
 // Exercise real PCM WAV capture/IPC with a deterministic virtual microphone and mocked cloud response.
-process.env.VICO_TEST_FAKE_DOUBAO = '1';
+globalThis.fetch = async url => {
+  const headers = { 'X-Api-Status-Code': '20000000', 'X-Api-Message': 'OK', 'X-Tt-Logid': 'test-log-id' };
+  const body = url.endsWith('/query') ? JSON.stringify({ audio_info: { duration: 7100 }, result: { text: 'Hello, this is a cloud speech recognition test.', utterances: [{ start_time: 0, end_time: 7100, text: 'Hello, this is a cloud speech recognition test.' }] } }) : '{}';
+  return new Response(body, { status: 200, headers });
+};
 app.commandLine.appendSwitch('use-fake-device-for-media-stream');
 app.commandLine.appendSwitch('use-file-for-fake-audio-capture', path.join(__dirname, '../output/sample.wav'));
 app.on('web-contents-created', (_event, contents) => {
@@ -43,7 +48,7 @@ app.whenReady().then(async () => {
     assert.ok(await window.webContents.executeJavaScript(`document.body.innerText.includes('结束录音并识别')`), 'Recording did not start');
     await window.webContents.executeJavaScript(`document.querySelector('.primary').click()`);
     let text = '';
-    for (let i = 0; i < 180; i++) {
+    for (let i = 0; i < 240; i++) {
       const body = await window.webContents.executeJavaScript('document.body.innerText');
       if (body.includes('识别完成')) { text = await window.webContents.executeJavaScript(`document.querySelector('textarea').value`); break; }
       if (body.includes('操作未完成')) throw new Error(body);
