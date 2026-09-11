@@ -1,68 +1,88 @@
 import { useEffect, useRef, useState } from 'react';
 
+function encodeWav(chunks, sampleRate, sampleCount) {
+  const buffer = new ArrayBuffer(44 + sampleCount * 2);
+  const view = new DataView(buffer);
+  const ascii = (offset, value) => [...value].forEach((character, index) => view.setUint8(offset + index, character.charCodeAt(0)));
+  ascii(0, 'RIFF'); view.setUint32(4, 36 + sampleCount * 2, true);
+  ascii(8, 'WAVE'); ascii(12, 'fmt '); view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  ascii(36, 'data'); view.setUint32(40, sampleCount * 2, true);
+  let offset = 44;
+  for (const chunk of chunks) for (const sample of chunk) { view.setInt16(offset, sample, true); offset += 2; }
+  return new Uint8Array(buffer);
+}
+
 export function useRecorder() {
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [level, setLevel] = useState(0);
   const active = useRef(null);
-  const release = () => {
+
+  function release() {
     const state = active.current;
     if (!state) return;
     clearInterval(state.timer);
+    state.processor.disconnect(); state.source.disconnect();
     state.stream.getTracks().forEach(track => track.stop());
-    state.context?.close().catch(() => {});
+    state.context.close().catch(() => {});
     active.current = null;
-    setRecording(false);
-    setLevel(0);
-  };
-  useEffect(() => () => {
-    const state = active.current;
-    if (state) { state.recorder.onstop = null; if (state.recorder.state !== 'inactive') state.recorder.stop(); release(); }
-  }, []);
+    setRecording(false); setLevel(0);
+  }
+  useEffect(() => () => release(), []);
 
   async function start(deviceId, onComplete, onError) {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), echoCancellation: true, noiseSuppression: true }, video: false });
     try {
-      const mimeType = ['audio/webm;codecs=opus', 'audio/webm'].find(type => MediaRecorder.isTypeSupported(type));
-      if (!mimeType) throw new Error('当前运行环境不支持 WebM 录音，请使用桌面应用');
-      const recorder = new MediaRecorder(stream, { mimeType });
-      const chunks = [];
       const context = new AudioContext();
-      const analyser = context.createAnalyser();
-      analyser.fftSize = 256;
-      context.createMediaStreamSource(stream).connect(analyser);
-      const samples = new Uint8Array(analyser.fftSize);
+      await context.resume();
+      const source = context.createMediaStreamSource(stream);
+      const processor = context.createScriptProcessor(4096, 1, 1);
+      const mute = context.createGain(); mute.gain.value = 0;
+      const chunks = [];
+      let sampleCount = 0;
+      let stopped = false;
       const started = Date.now();
-      let failed = false;
-      const state = { recorder, stream, context, timer: null };
+      const state = { stream, context, source, processor, timer: null, finish: null };
       active.current = state;
-      recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
-      recorder.onerror = event => { failed = true; release(); onError(event.error || new Error('录音失败')); };
-      recorder.onstop = async () => {
+      processor.onaudioprocess = event => {
+        if (stopped) return;
+        const input = event.inputBuffer.getChannelData(0);
+        const pcm = new Int16Array(input.length);
+        let peak = 0;
+        for (let i = 0; i < input.length; i++) {
+          const sample = Math.max(-1, Math.min(1, input[i]));
+          pcm[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+          peak = Math.max(peak, Math.abs(sample));
+        }
+        chunks.push(pcm); sampleCount += pcm.length;
+        setLevel(Math.min(1, peak * 3));
+      };
+      source.connect(processor); processor.connect(mute); mute.connect(context.destination);
+      state.finish = async () => {
+        if (stopped) return;
+        stopped = true;
+        const sampleRate = context.sampleRate;
         release();
-        if (failed) return;
         try {
-          const blob = new Blob(chunks, { type: mimeType });
-          if (!blob.size) throw new Error('没有录到音频，请检查麦克风');
-          await onComplete(new Uint8Array(await blob.arrayBuffer()));
+          if (!sampleCount) throw new Error('没有录到音频，请检查麦克风');
+          await onComplete(encodeWav(chunks, sampleRate, sampleCount));
         } catch (error) { onError(error); }
       };
-      recorder.start(250);
-      setSeconds(0);
-      setRecording(true);
       state.timer = setInterval(() => {
         const elapsed = (Date.now() - started) / 1000;
         setSeconds(Math.floor(elapsed));
-        analyser.getByteTimeDomainData(samples);
-        setLevel(Math.min(1, Math.sqrt(samples.reduce((sum, value) => sum + ((value - 128) / 128) ** 2, 0) / samples.length) * 5));
-        if (elapsed >= 600 && recorder.state === 'recording') recorder.stop();
+        if (elapsed >= 600) state.finish();
       }, 100);
+      setSeconds(0); setRecording(true);
     } catch (error) {
-      stream.getTracks().forEach(track => track.stop());
-      release();
-      throw error;
+      stream.getTracks().forEach(track => track.stop()); release(); throw error;
     }
   }
-  function stop() { if (active.current?.recorder.state === 'recording') active.current.recorder.stop(); }
+  function stop() { active.current?.finish?.(); }
   return { recording, seconds, level, start, stop };
 }
+
+export { encodeWav };

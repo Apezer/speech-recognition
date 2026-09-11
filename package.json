@@ -1,18 +1,16 @@
 {
-  "name": "vico-whisper-test",
-  "version": "0.1.0",
+  "name": "vico-speech-recognition",
+  "version": "0.2.0",
   "private": true,
-  "description": "Vico 本地语音转文字测试台",
+  "description": "Vico 豆包云端语音转文字测试台",
   "author": "Vico",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:5183 && electron . --dev\"",
     "build": "vite build",
     "start": "electron .",
-    "setup:engine": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-engine.ps1",
     "test": "node --test test/*.test.cjs",
     "test:desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/make-test-audio.ps1 && electron test/desktop-smoke.cjs",
-    "test:engine": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/make-test-audio.ps1 && node test/engine-smoke.cjs",
     "dist": "npm run build && electron-builder --win nsis"
   },
   "devDependencies": {
@@ -27,11 +25,10 @@
     "wait-on": "^8.0.1"
   },
   "build": {
-    "appId": "com.vico.whisper.test",
-    "productName": "Vico Whisper Test",
+    "appId": "com.vico.speech.recognition",
+    "productName": "Vico Speech Recognition",
     "directories": { "output": "release" },
     "files": ["dist/**/*", "electron/**/*", "package.json"],
-    "extraResources": [{ "from": "engine", "to": "engine", "filter": ["**/*.py", "requirements.txt"] }],
     "win": { "target": "nsis", "signAndEditExecutable": false },
     "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
   }

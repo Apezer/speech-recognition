@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { AudioLines, Mic, Square, Upload, Copy, Download, Check, Cpu, ChevronRight, LoaderCircle, FlaskConical, Radio, X, RefreshCw } from 'lucide-react';
+import { AudioLines, Mic, Square, Upload, Copy, Download, Check, Cloud, ChevronRight, LoaderCircle, FlaskConical, Radio, X, RefreshCw, KeyRound, Trash2 } from 'lucide-react';
 import { useRecorder } from './useRecorder';
 
-const defaults = { model: 'base', device: 'cpu', language: 'zh', offline: false };
+const defaults = { enableDdc: true, enablePunc: true, enableItn: true, enableSpeakerInfo: false, enableChannelSplit: false };
 const time = seconds => `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`;
 async function unwrap(promise) {
   const response = await promise;
@@ -21,15 +21,14 @@ export default function App() {
   const [starting, setStarting] = useState(false);
   const [status, setStatus] = useState('检查识别环境…');
   const [error, setError] = useState('');
-  const [engine, setEngine] = useState(null);
-  const [loaded, setLoaded] = useState('');
+  const [cloud, setCloud] = useState(null);
+  const [apiKey, setApiKey] = useState('');
   const [text, setText] = useState('');
   const [segments, setSegments] = useState([]);
   const [result, setResult] = useState(null);
   const [notice, setNotice] = useState('');
   const recorder = useRecorder();
   const locked = busy || recorder.recording || starting;
-  const modelKey = `${settings.model}/${settings.device}`;
   useEffect(() => { try { localStorage.setItem('vico-speech-settings', JSON.stringify(settings)); } catch {} }, [settings]);
   useEffect(() => { if (notice) { const timer = setTimeout(() => setNotice(''), 3000); return () => clearTimeout(timer); } }, [notice]);
   async function refreshDevices() {
@@ -39,8 +38,10 @@ export default function App() {
   async function check() {
     if (!window.speech) { setError('请使用 npm run dev 或 start.cmd 打开桌面应用。'); setStatus('需要桌面环境'); return; }
     setBusy(true); setError('');
-    try { setEngine(await unwrap(window.speech.check())); setStatus('环境就绪，可以开始录音'); }
-    catch (error) { setEngine(null); setError(error.message); setStatus('识别引擎尚未就绪'); }
+    try {
+      const value = await unwrap(window.speech.check()); setCloud(value);
+      setStatus(value.configured ? '豆包云端已配置，可以开始录音' : '请先保存豆包 API Key');
+    } catch (error) { setCloud(null); setError(error.message); setStatus('云端配置检测失败'); }
     finally { setBusy(false); }
   }
   useEffect(() => {
@@ -61,12 +62,11 @@ export default function App() {
     try {
       const value = await unwrap(operation());
       if (value === null) { setText(previous.text); setSegments(previous.segments); setResult(previous.result); setStatus('已取消选择'); return; }
-      setLoaded(modelKey);
       if (transcribing) {
         setResult(value); setText(value.text); setSegments(value.segments);
         setStatus(value.text ? '识别完成' : '未检测到有效语音，请检查音频或麦克风');
-      } else setStatus('模型已就绪，可以开始录音');
-    } catch (error) { setLoaded(''); setError(error.message); setStatus('任务已停止'); }
+      }
+    } catch (error) { setError(error.message); setStatus('任务已停止'); }
     finally { setBusy(false); }
   }
   async function start() {
@@ -83,6 +83,20 @@ export default function App() {
       if (copy || value) setNotice(copy ? '已复制到剪贴板' : '文本已保存');
     } catch (error) { setError(error.message); }
   }
+  async function saveApiKey() {
+    setBusy(true); setError('');
+    try {
+      const value = await unwrap(window.speech.saveCredential(apiKey));
+      setCloud(current => ({ ...current, ...value })); setApiKey(''); setStatus('豆包云端已配置，可以开始录音'); setNotice('API Key 已安全保存');
+    } catch (error) { setError(error.message); }
+    finally { setBusy(false); }
+  }
+  async function clearApiKey() {
+    setBusy(true); setError('');
+    try { const value = await unwrap(window.speech.clearCredential()); setCloud(current => ({ ...current, ...value })); setStatus('请先保存豆包 API Key'); }
+    catch (error) { setError(error.message); }
+    finally { setBusy(false); }
+  }
   const set = (key, value) => { setSettings(current => ({ ...current, [key]: value })); };
 
   return <div className="app-shell">
@@ -91,12 +105,12 @@ export default function App() {
       <div className="nav-label">实验工作台</div>
       <div className="nav-active"><AudioLines size={18}/>语音转文字<ChevronRight size={15}/></div>
       <div className="sidebar-note"><FlaskConical size={18}/><b>独立测试环境</b><p>在电脑端验证语音识别体验，为 Vico 键盘集成做准备。</p></div>
-      <div className="sidebar-bottom"><span className="dot"/>本地处理 · 音频不上传<small>WHISPER TEST / 0.1.0</small></div>
+      <div className="sidebar-bottom"><span className="dot"/>豆包云端识别<small>SEED-ASR 2.0 / 0.2.0</small></div>
     </aside>
     <main>
       <header><span>Vico Lab <ChevronRight size={12}/> 语音实验室</span><div className="badge"><FlaskConical size={13}/> TEST BUILD</div></header>
       <div className="content">
-        <div className="heading"><div><div className="eyebrow">VOICE TO TEXT</div><h1>让声音，变成文字。</h1><p>录下想法，或导入一段音频。Whisper 在你的电脑上完成识别。</p></div><span className="local-tag"><Cpu size={14}/> 本地引擎</span></div>
+        <div className="heading"><div><div className="eyebrow">VOICE TO TEXT</div><h1>让声音，变成文字。</h1><p>录下想法，或导入一段音频，由豆包 Seed-ASR 2.0 完成识别。</p></div><span className="local-tag"><Cloud size={14}/> 云端 API</span></div>
         <div className="workspace">
           <section className="record-panel panel">
             <div className="panel-title"><h2><Mic size={17}/>音频输入</h2><span>01</span></div>
@@ -107,9 +121,9 @@ export default function App() {
               <div className="wave" aria-label={`麦克风音量 ${Math.round(recorder.level * 100)}%`}>{Array.from({ length: 35 }, (_, i) => <i key={i} style={{ height: `${5 + recorder.level * (12 + (Math.sin(i * 1.7) + 1) * 22)}px` }}/>)}</div>
               <small>{recorder.recording ? '正在聆听 · 最长 10 分钟' : '准备好时，开始说话'}</small>
             </div>
-            <button className={`primary ${recorder.recording ? 'stop' : ''}`} disabled={!engine || busy || starting} onClick={recorder.recording ? recorder.stop : start}>{recorder.recording ? <Square size={16}/> : <Mic size={16}/>} {recorder.recording ? '结束录音并识别' : starting ? '正在打开麦克风…' : '开始录音'}</button>
+            <button className={`primary ${recorder.recording ? 'stop' : ''}`} disabled={!cloud?.configured || busy || starting} onClick={recorder.recording ? recorder.stop : start}>{recorder.recording ? <Square size={16}/> : <Mic size={16}/>} {recorder.recording ? '结束录音并识别' : starting ? '正在打开麦克风…' : '开始录音'}</button>
             <div className="separator"><span/>或者<span/></div>
-            <button className="import" disabled={locked || !engine} onClick={() => run(() => window.speech.transcribeFile(settings), true)}><Upload size={18}/><b>导入音频文件</b><small>WAV / MP3 / M4A / FLAC / WEBM 等</small></button>
+            <button className="import" disabled={locked || !cloud?.configured} onClick={() => run(() => window.speech.transcribeFile(settings), true)}><Upload size={18}/><b>导入音频文件</b><small>WAV / MP3 / M4A / FLAC / OGG 等</small></button>
           </section>
           <section className="result-panel panel">
             <div className="panel-title"><h2><AudioLines size={18}/>识别结果</h2><span>02</span></div>
@@ -120,19 +134,25 @@ export default function App() {
           </section>
         </div>
         <section className="panel settings">
-          <div className="panel-title"><h2><Cpu size={17}/>识别设置</h2><span>{engine ? `faster-whisper ${engine.version}` : '需要安装引擎'}</span></div>
-          <div className="settings-grid">
-            <label className="field">模型<select value={settings.model} disabled={locked} onChange={event => set('model', event.target.value)}><option value="tiny">Tiny · 快速测试</option><option value="base">Base · 入门均衡</option><option value="small">Small · 更高精度</option><option value="medium">Medium · 高精度</option><option value="large-v3">Large v3 · 最高精度</option><option value="turbo">Turbo · 大模型加速版</option></select></label>
-            <label className="field">识别语言<select value={settings.language} disabled={locked} onChange={event => set('language', event.target.value)}>{[['zh', '中文'], ['auto', '自动检测'], ['en', '英语'], ['ja', '日语'], ['ko', '韩语'], ['fr', '法语'], ['de', '德语'], ['es', '西班牙语']].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-            <label className="field">计算设备<select value={settings.device} disabled={locked} onChange={event => set('device', event.target.value)}><option value="cpu">CPU · INT8</option><option value="cuda">NVIDIA GPU · CUDA</option></select></label>
-            <button className="load" disabled={locked || !engine} onClick={() => run(() => window.speech.load(settings))}>{loaded === modelKey ? <Check size={15}/> : <Download size={15}/>} {loaded === modelKey ? '模型已加载' : '加载 / 下载模型'}</button>
+          <div className="panel-title"><h2><Cloud size={17}/>豆包云端设置</h2><span>volc.seedasr.auc</span></div>
+          <div className="credential-row">
+            <label className="field">API Key<input type="password" autoComplete="off" value={apiKey} disabled={locked} onChange={event => setApiKey(event.target.value)} placeholder={cloud?.configured ? cloud.masked : '粘贴火山引擎 API Key'}/></label>
+            <button className="load" disabled={locked || !apiKey.trim()} onClick={saveApiKey}><KeyRound size={15}/>保存密钥</button>
+            {cloud?.configured && <button className="load danger" disabled={locked} onClick={clearApiKey}><Trash2 size={15}/>删除</button>}
           </div>
-          <div className="settings-bottom"><label><input type="checkbox" disabled={locked} checked={settings.offline} onChange={event => set('offline', event.target.checked)}/>仅使用已缓存模型</label><span>首次加载需要联网 · GPU 需要 CUDA / cuDNN 环境</span></div>
+          <div className="option-grid">
+            <label><input type="checkbox" disabled={locked} checked={settings.enableDdc} onChange={event => set('enableDdc', event.target.checked)}/>语义顺滑</label>
+            <label><input type="checkbox" disabled={locked} checked={settings.enablePunc} onChange={event => set('enablePunc', event.target.checked)}/>自动标点</label>
+            <label><input type="checkbox" disabled={locked} checked={settings.enableItn} onChange={event => set('enableItn', event.target.checked)}/>数字规整</label>
+            <label><input type="checkbox" disabled={locked} checked={settings.enableSpeakerInfo} onChange={event => set('enableSpeakerInfo', event.target.checked)}/>说话人信息</label>
+            <label><input type="checkbox" disabled={locked} checked={settings.enableChannelSplit} onChange={event => set('enableChannelSplit', event.target.checked)}/>多声道分离</label>
+          </div>
+          <div className="settings-bottom"><span>{cloud?.configured ? `已保存：${cloud.masked}` : 'API Key 尚未配置'}</span><span>录音会上传至火山引擎，并按服务用量计费</span></div>
         </section>
-        {error && <div className="error" role="alert"><div><b>操作未完成</b><p>{error}</p>{!engine && <code>在项目文件夹运行：npm run setup:engine</code>}</div><button disabled={locked} onClick={check}><RefreshCw size={14}/>重新检测</button></div>}
+        {error && <div className="error" role="alert"><div><b>操作未完成</b><p>{error}</p></div><button disabled={locked} onClick={check}><RefreshCw size={14}/>重新检测</button></div>}
         {busy && <button className="cancel" onClick={async () => { try { await unwrap(window.speech.cancel()); } catch (error) { setError(error.message); } }}><X size={14}/>取消当前任务</button>}
         {segments.length > 0 && <details className="segments"><summary>查看原始分段与时间戳 · {segments.length} 段</summary>{segments.map((segment, index) => <div key={index}><time>{time(segment.start)} — {time(segment.end)}</time><span>{segment.text}</span></div>)}</details>}
-        <footer><Radio size={13}/> 音频仅在本机处理，录音临时文件在识别任务结束后清理。<span>VICO / VOICE LAB</span></footer>
+        <footer><Radio size={13}/> 音频上传豆包云端识别；本机临时录音在任务结束后清理。<span>VICO / VOICE LAB</span></footer>
       </div>
     </main>
   </div>;

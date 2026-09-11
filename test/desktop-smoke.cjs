@@ -3,7 +3,8 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const errors = [];
-// Exercise real MediaRecorder/IPC with a deterministic virtual microphone.
+// Exercise real PCM WAV capture/IPC with a deterministic virtual microphone and mocked cloud response.
+process.env.VICO_TEST_FAKE_DOUBAO = '1';
 app.commandLine.appendSwitch('use-fake-device-for-media-stream');
 app.commandLine.appendSwitch('use-file-for-fake-audio-capture', path.join(__dirname, '../output/sample.wav'));
 app.on('web-contents-created', (_event, contents) => {
@@ -17,11 +18,11 @@ app.whenReady().then(async () => {
     if (window.webContents.isLoading()) await new Promise(resolve => window.webContents.once('did-finish-load', resolve));
     for (let i = 0; i < 100; i++) {
       const body = await window.webContents.executeJavaScript('document.body.innerText');
-      if (body.includes('环境就绪') || body.includes('识别引擎尚未就绪')) break;
+      if (body.includes('API Key 尚未配置')) break;
       await new Promise(resolve => setTimeout(resolve, 150));
     }
     const result = await window.webContents.executeJavaScript(`({ text: document.body.innerText, node: typeof window.require, bridge: typeof window.speech, overflow: document.documentElement.scrollWidth > innerWidth })`);
-    assert.ok(result.text.includes('环境就绪'), result.text);
+    assert.ok(result.text.includes('API Key 尚未配置'), result.text);
     assert.equal(result.node, 'undefined');
     assert.equal(result.bridge, 'object');
     assert.equal(result.overflow, false);
@@ -29,9 +30,14 @@ app.whenReady().then(async () => {
     await fs.mkdir(path.join(__dirname, '../output'), { recursive: true });
     await fs.writeFile(path.join(__dirname, '../output/desktop.png'), (await window.webContents.capturePage()).toPNG());
     await window.webContents.executeJavaScript(`{
-      const select = [...document.querySelectorAll('select')].find(el => [...el.options].some(option => option.value === 'zh'));
-      select.value = 'en'; select.dispatchEvent(new Event('change', { bubbles: true }));
+      const input = document.querySelector('.credential-row input');
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setter.call(input, 'test-api-key-for-desktop-smoke');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
     }`);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await window.webContents.executeJavaScript(`document.querySelector('.credential-row .load').click()`);
+    await new Promise(resolve => setTimeout(resolve, 300));
     await window.webContents.executeJavaScript(`document.querySelector('.primary').click()`);
     await new Promise(resolve => setTimeout(resolve, 8200));
     assert.ok(await window.webContents.executeJavaScript(`document.body.innerText.includes('结束录音并识别')`), 'Recording did not start');
@@ -43,11 +49,12 @@ app.whenReady().then(async () => {
       if (body.includes('操作未完成')) throw new Error(body);
       await new Promise(resolve => setTimeout(resolve, 150));
     }
-    assert.match(text.toLowerCase(), /voice|speech|keyboard/);
+    assert.match(text.toLowerCase(), /cloud speech recognition/);
     await fs.writeFile(path.join(__dirname, '../output/desktop-result.png'), (await window.webContents.capturePage()).toPNG());
     await window.webContents.executeJavaScript(`localStorage.removeItem('vico-speech-settings')`);
+    await window.webContents.executeJavaScript(`window.speech.clearCredential()`);
     assert.deepEqual(errors, []);
-    console.log('PASS: desktop, permissions, virtual microphone → MediaRecorder → IPC → Whisper → result, renderer isolation.');
+    console.log('PASS: desktop, secure credential, virtual microphone → PCM WAV → IPC → mocked Doubao API → result, renderer isolation.');
     clearTimeout(timer);
     app.quit();
   } catch (error) { console.error(error); clearTimeout(timer); app.exit(1); }

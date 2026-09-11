@@ -1,7 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('speech', {
   check: () => ipcRenderer.invoke('speech:check'),
-  load: settings => ipcRenderer.invoke('speech:load', settings),
+  saveCredential: key => ipcRenderer.invoke('speech:credential:save', key),
+  clearCredential: () => ipcRenderer.invoke('speech:credential:clear'),
   transcribeRecording: (bytes, settings) => ipcRenderer.invoke('speech:recording', bytes, settings),
   transcribeFile: settings => ipcRenderer.invoke('speech:file', settings),
   cancel: () => ipcRenderer.invoke('speech:cancel'),

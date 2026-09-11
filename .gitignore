@@ -5,3 +5,8 @@ release/
 __pycache__/
 output/
 *.log
+.env
+.env.*
+!.env.example
+*api-key*
+credentials*.bin
